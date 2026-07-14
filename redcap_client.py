@@ -1,7 +1,7 @@
 """
 redcap_client.py
 
-Simple REDCap API client for the CIM Dashboard project.
+REDCap API client for the CIM Dashboard Export project.
 """
 
 from __future__ import annotations
@@ -9,13 +9,18 @@ from __future__ import annotations
 import requests
 
 #
-# Use the Windows certificate store when available.
+# Use Windows certificate store if available.
 #
 try:
     import truststore
+
     truststore.inject_into_ssl()
 except ImportError:
     pass
+
+
+class RedcapApiError(Exception):
+    """Raised when the REDCap API returns an unexpected response."""
 
 
 class RedcapClient:
@@ -24,56 +29,54 @@ class RedcapClient:
     def __init__(self, config, logger):
         self.config = config
         self.logger = logger
+
         self.session = requests.Session()
 
     def _post(self, payload: dict) -> requests.Response:
         """
-        Send a POST request to the REDCap API.
-
-        Returns the Response object even if REDCap returns
-        an HTTP error. This allows us to inspect the response body.
+        Execute a POST request against the REDCap API.
         """
 
-        try:
+        self.logger.info("POST %s", self.config.redcap_api_url)
+        self.logger.debug("Payload: %s", payload)
 
-            self.logger.info("POST %s", self.config.redcap_api_url)
-            self.logger.debug("Payload: %s", payload)
+        try:
 
             response = self.session.post(
                 self.config.redcap_api_url,
                 data=payload,
-                timeout=30,
+                timeout=60,
             )
 
-            self.logger.info("HTTP Status: %s", response.status_code)
-
-            return response
-
         except requests.exceptions.SSLError as exc:
-            self.logger.exception("SSL certificate verification failed.")
-            raise
+            raise RedcapApiError(
+                "SSL certificate verification failed."
+            ) from exc
 
         except requests.exceptions.Timeout as exc:
-            self.logger.exception("Connection timed out.")
-            raise
+            raise RedcapApiError(
+                "Connection to REDCap timed out."
+            ) from exc
 
         except requests.exceptions.ConnectionError as exc:
-            self.logger.exception("Unable to connect to REDCap.")
-            raise
+            raise RedcapApiError(
+                "Unable to connect to REDCap."
+            ) from exc
 
-    def test_connection(self):
+        self.logger.info("HTTP Status: %s", response.status_code)
+
+        return response
+
+    def test_project_access(self):
         """
-        Attempt a small REDCap record export.
-
-        We intentionally request records because this is the
-        operation the production job will perform.
+        Verify that the API endpoint and project are accessible.
         """
 
-        self.logger.info("Testing REDCap API...")
+        self.logger.info("Testing REDCap project access...")
 
         payload = {
             "token": self.config.redcap_api_token,
-            "content": "record",
+            "content": "project",
             "action": "export",
             "format": "csv",
             "type": "flat",
@@ -82,34 +85,19 @@ class RedcapClient:
 
         response = self._post(payload)
 
-        print()
-        print("=" * 80)
-        print("HTTP STATUS")
-        print("=" * 80)
-        print(response.status_code)
+        #
+        # Log first 500 characters for troubleshooting.
+        #
+        preview = response.text[:500].replace("\n", " ")
 
-        print()
-        print("=" * 80)
-        print("HEADERS")
-        print("=" * 80)
-        for key, value in response.headers.items():
-            print(f"{key}: {value}")
+        self.logger.debug("Response Preview: %s", preview)
 
-        print()
-        print("=" * 80)
-        print("BODY")
-        print("=" * 80)
-
-        print(response.text[:2000])
-
-        print("=" * 80)
-
-        if response.status_code == 200:
-            self.logger.info("Connection test completed successfully.")
-        else:
-            self.logger.warning(
-                "Server returned HTTP %s",
-                response.status_code,
+        if response.status_code != 200:
+            raise RedcapApiError(
+                f"REDCap returned HTTP {response.status_code}.\n"
+                f"Response:\n{response.text}"
             )
 
-        return response
+        self.logger.info("Successfully connected to REDCap project.")
+
+        return True
