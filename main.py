@@ -27,7 +27,11 @@ def main():
     client = RedcapClient(config, logger)
 
     # Verify that the API and project are accessible.
-    client.test_project_access()
+    # client.test_project_access()
+
+    output_file = config.output_folder / "raw_export.csv"
+
+    client.export_records(output_file)
 
     logger.info("Initialization completed successfully.")
 

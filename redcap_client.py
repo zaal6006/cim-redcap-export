@@ -5,6 +5,7 @@ REDCap API client for the CIM Dashboard Export project.
 """
 
 from __future__ import annotations
+from pathlib import Path
 
 import requests
 
@@ -101,3 +102,52 @@ class RedcapClient:
         self.logger.info("Successfully connected to REDCap project.")
 
         return True
+    
+    
+    def export_records(self, output_file: Path) -> Path:
+        """
+        Export REDCap records to CSV.
+        """
+
+        self.logger.info("Exporting REDCap records...")
+
+        payload = {
+            "token": self.config.redcap_api_token,
+            "content": "record",
+            "action": "export",
+            "format": "csv",
+            "type": "flat",
+            "returnFormat": "json",
+        }
+
+        response = self._post(payload)
+
+        if response.status_code != 200:
+            raise RedcapApiError(
+                f"HTTP {response.status_code}\n{response.text}"
+            )
+
+        #
+        # Very simple sanity check.
+        #
+        if "," not in response.text:
+            raise RedcapApiError(
+                "Response does not appear to be CSV."
+            )
+
+        output_file.write_text(
+            response.text,
+            encoding="utf-8",
+            newline=""
+        )
+
+        self.logger.info(
+            "CSV exported successfully."
+        )
+
+        self.logger.info(
+            "Saved to %s",
+            output_file
+        )
+
+        return output_file    
