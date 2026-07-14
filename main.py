@@ -33,6 +33,14 @@ def main():
 
     client.export_records(output_file)
 
+    from csv_processor import CsvProcessor
+
+    processor = CsvProcessor(logger)
+
+    rows = processor.load_csv(output_file)
+
+    logger.info("First study: %s", rows[0]["study_name"])    
+
     logger.info("Initialization completed successfully.")
 
 

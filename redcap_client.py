@@ -5,12 +5,15 @@ REDCap API client for the CIM Dashboard Export project.
 """
 
 from __future__ import annotations
+
+import csv
+import io
 from pathlib import Path
 
 import requests
 
 #
-# Use Windows certificate store if available.
+# Use Windows Certificate Store if available.
 #
 try:
     import truststore
@@ -25,13 +28,22 @@ class RedcapApiError(Exception):
 
 
 class RedcapClient:
-    """Simple REDCap API client."""
+    """
+    REDCap API client.
+
+    Responsible only for communication with REDCap.
+    """
 
     def __init__(self, config, logger):
+
         self.config = config
         self.logger = logger
 
         self.session = requests.Session()
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
     def _post(self, payload: dict) -> requests.Response:
         """
@@ -64,16 +76,145 @@ class RedcapClient:
                 "Unable to connect to REDCap."
             ) from exc
 
+        except requests.exceptions.RequestException as exc:
+            raise RedcapApiError(str(exc)) from exc
+
         self.logger.info("HTTP Status: %s", response.status_code)
 
         return response
 
-    def test_project_access(self):
+    def _validate_http_response(self, response: requests.Response) -> None:
         """
-        Verify that the API endpoint and project are accessible.
+        Validate HTTP response.
         """
 
-        self.logger.info("Testing REDCap project access...")
+        if response.status_code != 200:
+
+            self.logger.error(
+                "HTTP %s returned by REDCap.",
+                response.status_code,
+            )
+
+            self.logger.error(response.text)
+
+            raise RedcapApiError(
+                f"HTTP {response.status_code}"
+            )
+
+    def _validate_csv(self, csv_text: str) -> list[str]:
+        """
+        Validate returned CSV.
+
+        Returns
+        -------
+        list[str]
+            Header row.
+        """
+
+        try:
+
+            reader = csv.reader(io.StringIO(csv_text))
+
+            headers = next(reader)
+
+        except StopIteration:
+
+            raise RedcapApiError(
+                "Returned CSV is empty."
+            )
+
+        except Exception as exc:
+
+            raise RedcapApiError(
+                f"Unable to parse CSV ({exc})"
+            ) from exc
+
+        #
+        # Sanity check
+        #
+
+        if len(headers) < 2:
+
+            raise RedcapApiError(
+                "CSV contains too few columns."
+            )
+
+        #
+        # Future validation.
+        # Add required fields here.
+        #
+        
+        """
+        required_columns = [
+            "record_id",
+        ]
+
+        missing = [
+            column
+            for column in required_columns
+            if column not in headers
+        ]
+
+        if missing:
+
+            raise RedcapApiError(
+                "Missing required columns: "
+                + ", ".join(missing)
+            )
+        """
+        
+        #
+        # We intentionally do not validate specific column names yet.
+        #
+        # After we inspect the real REDCap export,
+        # we'll add validation for the columns that are
+        # actually required by this project.
+        #   
+
+        self.logger.info(
+            "CSV validation successful (%d columns).",
+            len(headers),
+        )
+
+        self.logger.debug(
+            "CSV Headers: %s",
+            headers,
+        )
+
+        return headers
+
+    def _save_csv(
+        self,
+        csv_text: str,
+        output_file: Path,
+    ) -> None:
+        """
+        Save CSV to disk.
+        """
+
+        output_file.write_text(
+            csv_text,
+            encoding="utf-8",
+            newline="",
+        )
+
+        self.logger.info(
+            "CSV saved to %s",
+            output_file,
+        )
+
+    # ------------------------------------------------------------------
+    # Public methods
+    # ------------------------------------------------------------------
+
+    def test_project_access(self) -> bool:
+        """
+        Verify that the REDCap API and project are accessible.
+        """
+
+        self.logger.info(
+            "Testing REDCap project access..."
+        )
 
         payload = {
             "token": self.config.redcap_api_token,
@@ -86,30 +227,25 @@ class RedcapClient:
 
         response = self._post(payload)
 
-        #
-        # Log first 500 characters for troubleshooting.
-        #
-        preview = response.text[:500].replace("\n", " ")
+        self._validate_http_response(response)
 
-        self.logger.debug("Response Preview: %s", preview)
-
-        if response.status_code != 200:
-            raise RedcapApiError(
-                f"REDCap returned HTTP {response.status_code}.\n"
-                f"Response:\n{response.text}"
-            )
-
-        self.logger.info("Successfully connected to REDCap project.")
+        self.logger.info(
+            "Successfully connected to REDCap project."
+        )
 
         return True
-    
-    
-    def export_records(self, output_file: Path) -> Path:
+
+    def export_records(
+        self,
+        output_file: Path,
+    ) -> Path:
         """
         Export REDCap records to CSV.
         """
 
-        self.logger.info("Exporting REDCap records...")
+        self.logger.info(
+            "Exporting REDCap records..."
+        )
 
         payload = {
             "token": self.config.redcap_api_token,
@@ -122,32 +258,29 @@ class RedcapClient:
 
         response = self._post(payload)
 
-        if response.status_code != 200:
-            raise RedcapApiError(
-                f"HTTP {response.status_code}\n{response.text}"
-            )
+        self._validate_http_response(response)
 
-        #
-        # Very simple sanity check.
-        #
-        if "," not in response.text:
-            raise RedcapApiError(
-                "Response does not appear to be CSV."
-            )
+        headers = self._validate_csv(
+            response.text
+        )
 
-        output_file.write_text(
+        self.logger.info(
+            "Detected %d columns.",
+            len(headers),
+        )
+
+        self.logger.info(
+            "First column: %s",
+            headers[0],
+        )
+
+        self._save_csv(
             response.text,
-            encoding="utf-8",
-            newline=""
+            output_file,
         )
 
         self.logger.info(
-            "CSV exported successfully."
+            "REDCap export completed successfully."
         )
 
-        self.logger.info(
-            "Saved to %s",
-            output_file
-        )
-
-        return output_file    
+        return output_file
