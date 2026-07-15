@@ -97,10 +97,7 @@ class CsvProcessor:
             for row in reader:
                 rows.append(row)
 
-        self.logger.info(
-            "Loaded %d records.",
-            len(rows),
-        )
+        self.logger.info("Loaded %d records.",len(rows),)
 
         return rows
     
@@ -130,10 +127,7 @@ class CsvProcessor:
 
         output_path = Path(output_file)
 
-        self.logger.info(
-            "Saving CSV file: %s",
-            output_path,
-        )
+        self.logger.info("Saving CSV file: %s",output_path,)
 
         with output_path.open(
             "w",
@@ -149,10 +143,7 @@ class CsvProcessor:
             writer.writeheader()
             writer.writerows(rows)
 
-        self.logger.info(
-            "Saved %d rows.",
-            len(rows),
-        )    
+        self.logger.debug("Saved %d rows.",len(rows),)    
     
     def identify_study_columns(self, headers: list[str]) -> list[str]:
         """
@@ -171,10 +162,7 @@ class CsvProcessor:
             if not is_visit_column:
                 study_columns.append(header)
 
-        self.logger.info(
-            "Detected %d study columns.",
-            len(study_columns),
-        )
+        self.logger.debug("Detected %d study columns.",len(study_columns),)
 
         return study_columns
     
@@ -213,10 +201,7 @@ class CsvProcessor:
 
             study_rows.append(study_row)
 
-        self.logger.info(
-            "Created %d study rows.",
-            len(study_rows),
-        )
+        self.logger.info("Created %d study rows.",len(study_rows),)
 
         return study_rows
     
@@ -276,9 +261,6 @@ class CsvProcessor:
 
                 patient_visit_rows.append(patient_visit_row)
 
-        self.logger.info(
-            "Created %d patient visit rows.",
-            len(patient_visit_rows),
-        )
+        self.logger.info("Created %d patient visit rows.",len(patient_visit_rows),)
 
         return patient_visit_rows

@@ -50,7 +50,7 @@ class RedcapClient:
         Execute a POST request against the REDCap API.
         """
 
-        self.logger.info("POST %s", self.config.redcap_api_url)
+        self.logger.debug("POST %s",self.config.redcap_api_url,)
         self.logger.debug("Payload: %s", payload)
 
         try:
@@ -79,7 +79,7 @@ class RedcapClient:
         except requests.exceptions.RequestException as exc:
             raise RedcapApiError(str(exc)) from exc
 
-        self.logger.info("HTTP Status: %s", response.status_code)
+        self.logger.debug("HTTP Status: %s", response.status_code)
 
         return response
 
@@ -162,24 +162,9 @@ class RedcapClient:
                 + ", ".join(missing)
             )
         """
-        
-        #
-        # We intentionally do not validate specific column names yet.
-        #
-        # After we inspect the real REDCap export,
-        # we'll add validation for the columns that are
-        # actually required by this project.
-        #   
 
-        self.logger.info(
-            "CSV validation successful (%d columns).",
-            len(headers),
-        )
-
-        self.logger.debug(
-            "CSV Headers: %s",
-            headers,
-        )
+        self.logger.debug("CSV validation successful (%d columns).",len(headers),)
+        self.logger.debug("CSV Headers: %s",headers,)
 
         return headers
 
@@ -260,19 +245,11 @@ class RedcapClient:
 
         self._validate_http_response(response)
 
-        headers = self._validate_csv(
-            response.text
-        )
+        headers = self._validate_csv(response.text)
 
-        self.logger.info(
-            "Detected %d columns.",
-            len(headers),
-        )
+        self.logger.debug("Detected %d columns.",len(headers),)
 
-        self.logger.info(
-            "First column: %s",
-            headers[0],
-        )
+        self.logger.debug("First column: %s",headers[0],)
 
         self._save_csv(
             response.text,

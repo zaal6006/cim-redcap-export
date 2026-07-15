@@ -3,9 +3,60 @@ from logger import setup_logger
 from redcap_client import RedcapClient
 from csv_processor import CsvProcessor
 from network_export import NetworkExporter
+from pathlib import Path
+import time
+
+
+def log_export_summary(
+    logger,
+    study_count: int,
+    patient_visit_count: int,
+    study_file: Path,
+    patient_file: Path,
+    network_share: Path,
+) -> None:
+    """
+    Write a summary of the export process.
+    """
+
+    logger.info("=" * 60)
+    logger.info("Export Summary")
+    logger.info("=" * 60)
+
+    logger.info(
+        "Studies exported      : %d",
+        study_count,
+    )
+
+    logger.info(
+        "Patient visits        : %d",
+        patient_visit_count,
+    )
+
+    logger.info(
+        "Study CSV             : %s",
+        study_file,
+    )
+
+    logger.info(
+        "Patient CSV           : %s",
+        patient_file,
+    )
+
+    logger.info(
+        "Network Share         : %s",
+        network_share,
+    )
+
+    logger.info(
+        "Status                : SUCCESS",
+    )
+
+    logger.info("=" * 60)
 
 
 def main():
+    start_time = time.perf_counter()
     config = load_config()
     logger = setup_logger(config.log_level)
 
@@ -13,10 +64,10 @@ def main():
     logger.info("CIM REDCap Export started")
     logger.info("=" * 60)
 
-    logger.info("API URL      : %s", config.redcap_api_url)
-    logger.info("Output Folder: %s", config.output_folder)
-    logger.info("Log Level    : %s", config.log_level)
-    logger.info("Network Share: %s", config.network_share,)    
+    logger.debug("API URL      : %s", config.redcap_api_url)
+    logger.debug("Output Folder: %s", config.output_folder)
+    logger.debug("Log Level    : %s", config.log_level)
+    logger.debug("Network Share: %s", config.network_share,)    
 
     client = RedcapClient(config, logger)
     processor = CsvProcessor(logger)
@@ -24,9 +75,7 @@ def main():
 
     raw_export_file = config.output_folder / "raw_export.csv"
     study_output_file = config.output_folder / "study_information.csv"
-    patient_output_file = (
-        config.output_folder / "patient_visit_dates.csv"
-    )
+    patient_output_file = config.output_folder / "patient_visit_dates.csv"
 
     client.export_records(raw_export_file)
 
@@ -65,9 +114,20 @@ def main():
         config.network_share / patient_output_file.name,
     )
 
-    logger.info("=" * 60)
-    logger.info("CIM REDCap Export completed successfully.")
-    logger.info("=" * 60)
+    duration = time.perf_counter() - start_time
+    duration: float
+    logger.info(
+        "Duration              : %.2f seconds",
+        duration,
+    )
+    log_export_summary(
+        logger=logger,
+        study_count=len(study_rows),
+        patient_visit_count=len(patient_visit_rows),
+        study_file=study_output_file,
+        patient_file=patient_output_file,
+        network_share=config.network_share,
+    )
 
 
 if __name__ == "__main__":
