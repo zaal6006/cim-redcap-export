@@ -39,7 +39,43 @@ def main():
 
     rows = processor.load_csv(output_file)
 
-    logger.info("First study: %s", rows[0]["study_name"])    
+    # logger.info("First study: %s", rows[0]["study_name"])    
+
+    headers = rows[0].keys()
+
+    study_columns = processor.identify_study_columns(list(headers))
+
+    logger.info("Study columns detected: %d", len(study_columns))
+    # logger.info("First five study columns: %s", study_columns[:5])
+
+    study_rows = processor.create_study_rows(rows, study_columns)
+
+    logger.info("Study rows created: %d", len(study_rows))
+    logger.info("Columns in first study row: %d", len(study_rows[0]))
+    # logger.info("First study: %s", study_rows[0]["study_name"])    
+
+    patient_visit_rows = processor.create_patient_visit_rows(rows)
+
+    logger.info(
+        "Patient visit rows created: %d",
+        len(patient_visit_rows),
+    )
+
+    if patient_visit_rows:
+        logger.info(
+            "First patient visit row: %s",
+            patient_visit_rows[0],
+        )
+
+    processor.save_csv(
+        study_rows,
+        "output/study_information.csv",
+    )        
+
+    processor.save_csv(
+        patient_visit_rows,
+        "output/patient_visit_dates.csv",
+    )
 
     logger.info("Initialization completed successfully.")
 
