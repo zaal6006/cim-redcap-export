@@ -2,6 +2,7 @@ from config import load_config
 from logger import setup_logger
 from redcap_client import RedcapClient
 from csv_processor import CsvProcessor
+from network_export import NetworkExporter
 
 
 def main():
@@ -15,9 +16,11 @@ def main():
     logger.info("API URL      : %s", config.redcap_api_url)
     logger.info("Output Folder: %s", config.output_folder)
     logger.info("Log Level    : %s", config.log_level)
+    logger.info("Network Share: %s", config.network_share,)    
 
     client = RedcapClient(config, logger)
     processor = CsvProcessor(logger)
+    network_exporter = NetworkExporter(logger)
 
     raw_export_file = config.output_folder / "raw_export.csv"
     study_output_file = config.output_folder / "study_information.csv"
@@ -47,9 +50,19 @@ def main():
         study_output_file,
     )
 
+    network_exporter.copy_file(
+        study_output_file,
+        config.network_share / study_output_file.name,
+    )
+
     processor.save_csv(
         patient_visit_rows,
         patient_output_file,
+    )
+
+    network_exporter.copy_file(
+        patient_output_file,
+        config.network_share / patient_output_file.name,
     )
 
     logger.info("=" * 60)
