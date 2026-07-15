@@ -1,19 +1,11 @@
-"""
-main.py
-
-Entry point for the CIM REDCap Export application.
-"""
-
 from config import load_config
 from logger import setup_logger
 from redcap_client import RedcapClient
+from csv_processor import CsvProcessor
 
 
 def main():
-    # Load application configuration
     config = load_config()
-
-    # Initialize logging
     logger = setup_logger(config.log_level)
 
     logger.info("=" * 60)
@@ -25,53 +17,44 @@ def main():
     logger.info("Log Level    : %s", config.log_level)
 
     client = RedcapClient(config, logger)
-
-    # Verify that the API and project are accessible.
-    # client.test_project_access()
-
-    output_file = config.output_folder / "raw_export.csv"
-
-    client.export_records(output_file)
-
-    from csv_processor import CsvProcessor
-
     processor = CsvProcessor(logger)
 
-    rows = processor.load_csv(output_file)
+    raw_export_file = config.output_folder / "raw_export.csv"
+    study_output_file = config.output_folder / "study_information.csv"
+    patient_output_file = (
+        config.output_folder / "patient_visit_dates.csv"
+    )
 
-    # logger.info("First study: %s", rows[0]["study_name"])    
+    client.export_records(raw_export_file)
 
-    headers = rows[0].keys()
+    rows = processor.load_csv(raw_export_file)
 
-    study_columns = processor.identify_study_columns(list(headers))
+    headers = list(rows[0].keys())
 
-    logger.info("Study columns detected: %d", len(study_columns))
-    # logger.info("First five study columns: %s", study_columns[:5])
+    study_columns = processor.identify_study_columns(headers)
 
-    study_rows = processor.create_study_rows(rows, study_columns)
+    study_rows = processor.create_study_rows(
+        rows,
+        study_columns,
+    )
 
-    logger.info("Study rows created: %d", len(study_rows))
-    logger.info("Columns in first study row: %d", len(study_rows[0]))
-    # logger.info("First study: %s", study_rows[0]["study_name"])    
-
-    patient_visit_rows = processor.create_patient_visit_rows(rows)
-
-    logger.info(
-        "Patient visit rows created: %d",
-        len(patient_visit_rows),
+    patient_visit_rows = processor.create_patient_visit_rows(
+        rows,
     )
 
     processor.save_csv(
         study_rows,
-        "output/study_information.csv",
-    )        
+        study_output_file,
+    )
 
     processor.save_csv(
         patient_visit_rows,
-        "output/patient_visit_dates.csv",
+        patient_output_file,
     )
 
-    logger.info("Initialization completed successfully.")
+    logger.info("=" * 60)
+    logger.info("CIM REDCap Export completed successfully.")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
