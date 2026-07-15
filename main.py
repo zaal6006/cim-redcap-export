@@ -61,12 +61,6 @@ def main():
         len(patient_visit_rows),
     )
 
-    if patient_visit_rows:
-        logger.info(
-            "First patient visit row: %s",
-            patient_visit_rows[0],
-        )
-
     processor.save_csv(
         study_rows,
         "output/study_information.csv",
