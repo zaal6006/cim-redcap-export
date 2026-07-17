@@ -4,6 +4,7 @@ from redcap_client import RedcapClient
 from csv_processor import CsvProcessor
 from network_export import NetworkExporter
 from pathlib import Path
+from datetime import datetime
 import time
 
 
@@ -55,6 +56,59 @@ def log_export_summary(
     logger.info("=" * 60)
 
 
+def cleanup_old_archives(
+    archive_folder: Path,
+    days_to_keep: int,
+    logger,
+) -> None:
+    """
+    Delete archived raw export files older than `days_to_keep` days.
+
+    Parameters
+    ----------
+    archive_folder : Path
+        Folder containing the timestamped raw_export_*.csv files.
+
+    days_to_keep : int
+        Number of days of archives to retain.
+
+    logger : Logger
+    """
+
+    if not archive_folder.exists():
+        return
+
+    cutoff = time.time() - (days_to_keep * 86400)
+    deleted = 0
+
+    for file in archive_folder.glob("raw_export_*.csv"):
+
+        if file.stat().st_mtime < cutoff:
+
+            try:
+                file.unlink()
+                deleted += 1
+
+            except OSError as exc:
+                logger.warning(
+                    "Could not delete old archive file %s: %s",
+                    file,
+                    exc,
+                )
+
+    if deleted:
+        logger.info(
+            "Cleanup: removed %d archive file(s) older than %d days.",
+            deleted,
+            days_to_keep,
+        )
+    else:
+        logger.debug(
+            "Cleanup: no archive files older than %d days found.",
+            days_to_keep,
+        )
+
+
 def main():
     start_time = time.perf_counter()
     config = load_config()
@@ -67,73 +121,103 @@ def main():
     logger.debug("API URL      : %s", config.redcap_api_url)
     logger.debug("Output Folder: %s", config.output_folder)
     logger.debug("Log Level    : %s", config.log_level)
-    logger.debug("Network Share: %s", config.network_share,)    
+    logger.debug("Network Share: %s", config.network_share,)
 
-    try:        
-        client = RedcapClient(config, logger)
-        processor = CsvProcessor(logger)
-        network_exporter = NetworkExporter(logger)
+    client = RedcapClient(config, logger)
+    processor = CsvProcessor(logger)
+    network_exporter = NetworkExporter(logger)
 
-        raw_export_file = config.output_folder / "raw_export.csv"
-        study_output_file = config.output_folder / "study_information.csv"
-        patient_output_file = config.output_folder / "patient_visit_dates.csv"
+    # ------------------------------------------------------------
+    # File paths
+    # ------------------------------------------------------------
+    # Raw exports are archived with a timestamp so we keep a history
+    # of every pull for auditing/debugging purposes.
+    #
+    # Study/patient CSVs keep FIXED names, because the network share
+    # consumers (e.g. Power BI) expect a stable filename to read from.
+    # ------------------------------------------------------------
 
-        client.export_records(raw_export_file)
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        rows = processor.load_csv(raw_export_file)
+    archive_folder = config.output_folder / "archive"
+    archive_folder.mkdir(parents=True, exist_ok=True)
 
-        headers = list(rows[0].keys())
+    raw_export_file = archive_folder / f"raw_export_{run_timestamp}.csv"
+    study_output_file = config.output_folder / "study_information.csv"
+    patient_output_file = config.output_folder / "patient_visit_dates.csv"
 
-        study_columns = processor.identify_study_columns(headers)
+    logger.debug("Raw export file (archived): %s", raw_export_file)
 
-        study_rows = processor.create_study_rows(
-            rows,
-            study_columns,
-        )
+    client.export_records(raw_export_file)
 
-        patient_visit_rows = processor.create_patient_visit_rows(
-            rows,
-        )
+    rows = processor.load_csv(raw_export_file)
 
-        processor.save_csv(
-            study_rows,
-            study_output_file,
-        )
+    if not rows:
+        logger.error("REDCap export returned zero records. Aborting.")
+        raise SystemExit(1)
 
-        network_exporter.copy_file(
-            study_output_file,
-            config.network_share / study_output_file.name,
-        )
+    headers = list(rows[0].keys())
 
-        processor.save_csv(
-            patient_visit_rows,
-            patient_output_file,
-        )
+    study_columns = processor.identify_study_columns(headers)
 
-        network_exporter.copy_file(
-            patient_output_file,
-            config.network_share / patient_output_file.name,
-        )
+    study_rows = processor.create_study_rows(
+        rows,
+        study_columns,
+    )
 
-        duration = time.perf_counter() - start_time
-        duration: float
-        logger.info(
-            "Duration              : %.2f seconds",
-            duration,
-        )
-        log_export_summary(
-            logger=logger,
-            study_count=len(study_rows),
-            patient_visit_count=len(patient_visit_rows),
-            study_file=study_output_file,
-            patient_file=patient_output_file,
-            network_share=config.network_share,
-        )
+    patient_visit_rows = processor.create_patient_visit_rows(
+        rows,
+    )
 
-    except Exception:
-        logger.exception("Export FAILED.")
-        raise SystemExit(1)   # non-zero exit code so Task Scheduler sees failure
+    processor.save_csv(
+        study_rows,
+        study_output_file,
+    )
+
+    network_exporter.copy_file(
+        study_output_file,
+        config.network_share / study_output_file.name,
+    )
+
+    processor.save_csv(
+        patient_visit_rows,
+        patient_output_file,
+    )
+
+    network_exporter.copy_file(
+        patient_output_file,
+        config.network_share / patient_output_file.name,
+    )
+
+    # Keep 90 days of raw export archives, delete anything older.
+    cleanup_old_archives(
+        archive_folder=archive_folder,
+        days_to_keep=90,
+        logger=logger,
+    )
+
+    duration = time.perf_counter() - start_time
+    duration: float
+    logger.info(
+        "Duration              : %.2f seconds",
+        duration,
+    )
+    log_export_summary(
+        logger=logger,
+        study_count=len(study_rows),
+        patient_visit_count=len(patient_visit_rows),
+        study_file=study_output_file,
+        patient_file=patient_output_file,
+        network_share=config.network_share,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        import logging
+        logging.getLogger("cim_export").exception("Export FAILED with an unexpected error.")
+        raise SystemExit(1)
