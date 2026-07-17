@@ -219,5 +219,22 @@ if __name__ == "__main__":
         raise
     except Exception:
         import logging
-        logging.getLogger("cim_export").exception("Export FAILED with an unexpected error.")
+        from pathlib import Path
+
+        # Fallback: if setup_logger() never ran (e.g. config.py failed),
+        # the "cim_export" logger has no handlers yet. Attach an emergency
+        # one so the failure is never silently lost.
+        logger = logging.getLogger("cim_export")
+        if not logger.handlers:
+            Path("logs").mkdir(exist_ok=True)
+            logging.basicConfig(
+                level=logging.ERROR,
+                format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+                handlers=[
+                    logging.FileHandler("logs/cim_export_fatal.log"),
+                    logging.StreamHandler(),
+                ],
+            )
+
+        logger.exception("Export FAILED with an unexpected error.")
         raise SystemExit(1)
