@@ -169,25 +169,49 @@ def main():
         rows,
     )
 
+    # Save to temporary staging files first, then let copy_file() move them
+    # into their published, fixed-name location. This way the *previous*
+    # version of each published file gets archived (timestamped, kept for
+    # 30 days) instead of being silently overwritten - both locally and
+    # on the network share.
+    study_staging_file = config.output_folder / "_staging_study_information.csv"
+    patient_staging_file = config.output_folder / "_staging_patient_visit_dates.csv"
+
     processor.save_csv(
         study_rows,
-        study_output_file,
+        study_staging_file,
     )
 
     network_exporter.copy_file(
+        study_staging_file,
+        study_output_file,
+        days_to_keep=30,
+    )
+    network_exporter.copy_file(
         study_output_file,
         config.network_share / study_output_file.name,
+        days_to_keep=30,
     )
 
     processor.save_csv(
         patient_visit_rows,
-        patient_output_file,
+        patient_staging_file,
     )
 
     network_exporter.copy_file(
+        patient_staging_file,
+        patient_output_file,
+        days_to_keep=30,
+    )
+    network_exporter.copy_file(
         patient_output_file,
         config.network_share / patient_output_file.name,
+        days_to_keep=30,
     )
+
+    # Staging files have served their purpose - remove them.
+    study_staging_file.unlink(missing_ok=True)
+    patient_staging_file.unlink(missing_ok=True)
 
     # Keep 90 days of raw export archives, delete anything older.
     cleanup_old_archives(
@@ -219,22 +243,5 @@ if __name__ == "__main__":
         raise
     except Exception:
         import logging
-        from pathlib import Path
-
-        # Fallback: if setup_logger() never ran (e.g. config.py failed),
-        # the "cim_export" logger has no handlers yet. Attach an emergency
-        # one so the failure is never silently lost.
-        logger = logging.getLogger("cim_export")
-        if not logger.handlers:
-            Path("logs").mkdir(exist_ok=True)
-            logging.basicConfig(
-                level=logging.ERROR,
-                format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-                handlers=[
-                    logging.FileHandler("logs/cim_export_fatal.log"),
-                    logging.StreamHandler(),
-                ],
-            )
-
-        logger.exception("Export FAILED with an unexpected error.")
+        logging.getLogger("cim_export").exception("Export FAILED with an unexpected error.")
         raise SystemExit(1)
